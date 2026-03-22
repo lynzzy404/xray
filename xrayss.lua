@@ -6,8 +6,8 @@ local CoreGui = game:GetService("CoreGui")
 -- PREVENT DUPLICATE
 --------------------------------------------------
 
-if CoreGui:FindFirstChild("UNIVERSAL_XRAY") then
-    CoreGui.UNIVERSAL_XRAY:Destroy()
+if CoreGui:FindFirstChild("XRAY_MOVEMENT") then
+    CoreGui.XRAY_MOVEMENT:Destroy()
 end
 
 --------------------------------------------------
@@ -15,14 +15,14 @@ end
 --------------------------------------------------
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "UNIVERSAL_XRAY"
+gui.Name = "XRAY_MOVEMENT"
 gui.ResetOnSpawn = false
 gui.Parent = CoreGui
 
 local btn = Instance.new("TextButton")
 btn.Size = UDim2.new(0,130,0,40)
 btn.Position = UDim2.new(0.1,0,0.5,0)
-btn.Text = "XRAY3 : OFF"
+btn.Text = "XRAY2 : OFF"
 btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
 btn.TextColor3 = Color3.new(1,1,1)
 btn.Draggable = true
@@ -36,77 +36,15 @@ Instance.new("UICorner",btn)
 
 local enabled = false
 local highlights = {}
-local processed = {}
 local walls = {}
+local processed = {}
 
 --------------------------------------------------
--- PLAYER CHARACTER TABLE
+-- PLAYER CHECK
 --------------------------------------------------
 
-local playerCharacters = {}
-
-local function updatePlayers()
-
-    table.clear(playerCharacters)
-
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p.Character then
-            playerCharacters[p.Character] = true
-        end
-    end
-
-end
-
-Players.PlayerAdded:Connect(updatePlayers)
-Players.PlayerRemoving:Connect(updatePlayers)
-
-updatePlayers()
-
---------------------------------------------------
--- GET TOP MODEL (FIX BUG)
---------------------------------------------------
-
-local function getTopModel(model)
-
-    local top = model
-
-    while top.Parent and top.Parent:IsA("Model") do
-        top = top.Parent
-    end
-
-    return top
-end
-
---------------------------------------------------
--- DETECT RIG
---------------------------------------------------
-
-local function isRig(model)
-
-    if not model:IsA("Model") then
-        return false
-    end
-
-    local partCount = 0
-    local jointFound = false
-
-    for _,obj in ipairs(model:GetDescendants()) do
-
-        if obj:IsA("BasePart") then
-            partCount += 1
-        end
-
-        if obj:IsA("Motor6D") or obj:IsA("Weld") then
-            jointFound = true
-        end
-
-        if partCount >= 2 and jointFound then
-            return true
-        end
-
-    end
-
-    return false
+local function isPlayerModel(model)
+    return Players:GetPlayerFromCharacter(model) ~= nil
 end
 
 --------------------------------------------------
@@ -130,26 +68,44 @@ local function addHighlight(model,color)
 end
 
 --------------------------------------------------
+-- MOVEMENT DETECTION
+--------------------------------------------------
+
+local function isMoving(model)
+
+    local part = model:FindFirstChildWhichIsA("BasePart")
+    if not part then return false end
+
+    local pos1 = part.Position
+    task.wait(0.5)
+    local pos2 = part.Position
+
+    return (pos1 - pos2).Magnitude > 0.1
+end
+
+--------------------------------------------------
 -- PROCESS MODEL
 --------------------------------------------------
 
 local function process(model)
 
+    if processed[model] then return end
     if not model:IsA("Model") then return end
 
-    local topModel = getTopModel(model)
+    processed[model] = true
 
-    if processed[topModel] then return end
-    processed[topModel] = true
-
-    if playerCharacters[topModel] then
-        addHighlight(topModel,Color3.fromRGB(0,255,0))
+    if isPlayerModel(model) then
+        addHighlight(model,Color3.fromRGB(0,255,0))
         return
     end
 
-    if isRig(topModel) then
-        addHighlight(topModel,Color3.fromRGB(255,0,0))
-    end
+    task.spawn(function()
+
+        if isMoving(model) then
+            addHighlight(model,Color3.fromRGB(255,0,0))
+        end
+
+    end)
 
 end
 
@@ -187,7 +143,7 @@ local function scanWorld()
 end
 
 --------------------------------------------------
--- SPAWN LISTENER
+-- SPAWN DETECTION
 --------------------------------------------------
 
 Workspace.DescendantAdded:Connect(function(obj)
@@ -195,9 +151,7 @@ Workspace.DescendantAdded:Connect(function(obj)
     if not enabled then return end
 
     if obj:IsA("Model") then
-        task.delay(0.2,function()
-            process(obj)
-        end)
+        process(obj)
     end
 
     if obj:IsA("BasePart") then
@@ -225,8 +179,8 @@ local function disable()
     end
 
     table.clear(highlights)
-    table.clear(processed)
     table.clear(walls)
+    table.clear(processed)
 
 end
 
