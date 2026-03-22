@@ -1,5 +1,5 @@
 -- ADVANCED XRAY / ESP SYSTEM
--- event based | npc + player detection | lightweight
+-- event based | player + movement NPC detection | lightweight
 
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -24,8 +24,7 @@ ToggleBtn.Active = true
 ToggleBtn.Draggable = true
 ToggleBtn.Parent = ScreenGui
 
-local UICorner = Instance.new("UICorner")
-UICorner.Parent = ToggleBtn
+Instance.new("UICorner",ToggleBtn)
 
 --------------------------------------------------
 -- SYSTEM
@@ -33,14 +32,36 @@ UICorner.Parent = ToggleBtn
 
 local xrayEnabled = false
 local highlighted = {}
+local processed = {}
 
 --------------------------------------------------
--- TARGET DETECTION
+-- PLAYER CHECK
 --------------------------------------------------
 
 local function isPlayer(model)
     return Players:GetPlayerFromCharacter(model) ~= nil
 end
+
+--------------------------------------------------
+-- MOVEMENT DETECTION
+--------------------------------------------------
+
+local function isMoving(model)
+
+    local part = model:FindFirstChildWhichIsA("BasePart")
+    if not part then return false end
+
+    local pos1 = part.Position
+    task.wait(0.4)
+    local pos2 = part.Position
+
+    return (pos1 - pos2).Magnitude > 0.1
+
+end
+
+--------------------------------------------------
+-- NPC DETECTION
+--------------------------------------------------
 
 local function isNPC(model)
 
@@ -68,6 +89,7 @@ local function isNPC(model)
     end
 
     return false
+
 end
 
 --------------------------------------------------
@@ -97,16 +119,20 @@ local function createHighlight(model,color)
             end
         end
     end)
+
 end
 
 --------------------------------------------------
--- PROCESS OBJECT
+-- PROCESS MODEL
 --------------------------------------------------
 
 local function processModel(model)
 
     if not xrayEnabled then return end
+    if processed[model] then return end
     if not model:IsA("Model") then return end
+
+    processed[model] = true
 
     if isPlayer(model) then
         createHighlight(model,Color3.fromRGB(0,255,0))
@@ -118,10 +144,18 @@ local function processModel(model)
         return
     end
 
+    task.spawn(function()
+
+        if isMoving(model) then
+            createHighlight(model,Color3.fromRGB(255,0,0))
+        end
+
+    end)
+
 end
 
 --------------------------------------------------
--- XRAY WALL TRANSPARENCY
+-- XRAY WALL
 --------------------------------------------------
 
 local function applyXray()
@@ -148,6 +182,8 @@ local function disableXray()
         end
         highlighted[model] = nil
     end
+
+    table.clear(processed)
 
 end
 
@@ -183,10 +219,6 @@ local function startDetection()
         scanContainer(game.ReplicatedStorage)
     end
 
-    if game:FindFirstChild("ServerStorage") then
-        scanContainer(game.ServerStorage)
-    end
-
 end
 
 --------------------------------------------------
@@ -207,7 +239,7 @@ ToggleBtn.MouseButton1Click:Connect(function()
 
     else
 
-        ToggleBtn.Text = "XRAY : OFF"
+        ToggleBtn.Text = "XRAY22 : OFF"
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(180,0,0)
 
         disableXray()
