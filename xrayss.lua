@@ -1,34 +1,29 @@
+-- ADVANCED XRAY / ESP (STATIC SCAN)
+-- single scan | lightweight | no auto update
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
 --------------------------------------------------
--- PREVENT DUPLICATE
---------------------------------------------------
-
-if CoreGui:FindFirstChild("XRAY_MOVEMENT") then
-    CoreGui.XRAY_MOVEMENT:Destroy()
-end
-
---------------------------------------------------
 -- GUI
 --------------------------------------------------
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "XRAY_MOVEMENT"
-gui.ResetOnSpawn = false
-gui.Parent = CoreGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "XraySystemGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = CoreGui
 
-local btn = Instance.new("TextButton")
-btn.Size = UDim2.new(0,130,0,40)
-btn.Position = UDim2.new(0.1,0,0.5,0)
-btn.Text = "XRAY2 : OFF"
-btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
-btn.TextColor3 = Color3.new(1,1,1)
-btn.Draggable = true
-btn.Parent = gui
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0,130,0,40)
+ToggleBtn.Position = UDim2.new(0.1,0,0.5,0)
+ToggleBtn.Text = "XRAY : OFF"
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(170,0,0)
+ToggleBtn.TextColor3 = Color3.new(1,1,1)
+ToggleBtn.Draggable = true
+ToggleBtn.Parent = ScreenGui
 
-Instance.new("UICorner",btn)
+Instance.new("UICorner",ToggleBtn)
 
 --------------------------------------------------
 -- STATE
@@ -36,151 +31,138 @@ Instance.new("UICorner",btn)
 
 local enabled = false
 local highlights = {}
-local walls = {}
-local processed = {}
+local wallParts = {}
 
 --------------------------------------------------
 -- PLAYER CHECK
 --------------------------------------------------
 
-local function isPlayerModel(model)
-    return Players:GetPlayerFromCharacter(model) ~= nil
+local function isPlayer(model)
+	return Players:GetPlayerFromCharacter(model) ~= nil
 end
 
 --------------------------------------------------
--- HIGHLIGHT
+-- NPC DETECTION
 --------------------------------------------------
 
-local function addHighlight(model,color)
+local function isNPC(model)
 
-    if highlights[model] then return end
+	if model:FindFirstChildWhichIsA("Humanoid") and not isPlayer(model) then
+		return true
+	end
 
-    local hl = Instance.new("Highlight")
-    hl.FillTransparency = 1
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.OutlineColor = color
-    hl.Adornee = model
-    hl.Parent = model
+	if model:FindFirstChildWhichIsA("AnimationController") then
+		return true
+	end
 
-    highlights[model] = hl
+	if model:FindFirstChild("HumanoidRootPart") and not isPlayer(model) then
+		return true
+	end
 
+	local name = string.lower(model.Name)
+
+	local keywords = {
+		"npc","enemy","monster","mob",
+		"boss","zombie","dummy","bot","ai"
+	}
+
+	for _,k in ipairs(keywords) do
+		if string.find(name,k) then
+			return true
+		end
+	end
+
+	return false
 end
 
 --------------------------------------------------
--- MOVEMENT DETECTION
+-- HIGHLIGHT CREATION
 --------------------------------------------------
 
-local function isMoving(model)
+local function createHighlight(model,color)
 
-    local part = model:FindFirstChildWhichIsA("BasePart")
-    if not part then return false end
+	local hl = Instance.new("Highlight")
+	hl.Name = "ESP_Highlight"
+	hl.Adornee = model
+	hl.FillTransparency = 1
+	hl.OutlineTransparency = 0
+	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	hl.OutlineColor = color
+	hl.Parent = model
 
-    local pos1 = part.Position
-    task.wait(0.5)
-    local pos2 = part.Position
-
-    return (pos1 - pos2).Magnitude > 0.1
-end
-
---------------------------------------------------
--- PROCESS MODEL
---------------------------------------------------
-
-local function process(model)
-
-    if processed[model] then return end
-    if not model:IsA("Model") then return end
-
-    processed[model] = true
-
-    if isPlayerModel(model) then
-        addHighlight(model,Color3.fromRGB(0,255,0))
-        return
-    end
-
-    task.spawn(function()
-
-        if isMoving(model) then
-            addHighlight(model,Color3.fromRGB(255,0,0))
-        end
-
-    end)
+	table.insert(highlights,hl)
 
 end
 
 --------------------------------------------------
--- XRAY WALL
+-- MODEL PROCESS
+--------------------------------------------------
+
+local function processModel(model)
+
+	if isPlayer(model) then
+		createHighlight(model,Color3.fromRGB(0,255,0))
+		return
+	end
+
+	if isNPC(model) then
+		createHighlight(model,Color3.fromRGB(255,0,0))
+		return
+	end
+
+end
+
+--------------------------------------------------
+-- WALL XRAY
 --------------------------------------------------
 
 local function applyWall(part)
 
-    if walls[part] then return end
-
-    part.LocalTransparencyModifier = 0.5
-    walls[part] = true
+	part.LocalTransparencyModifier = 0.5
+	table.insert(wallParts,part)
 
 end
 
 --------------------------------------------------
--- INITIAL SCAN
+-- WORLD SCAN
 --------------------------------------------------
 
 local function scanWorld()
 
-    for _,obj in ipairs(Workspace:GetDescendants()) do
+	for _,obj in ipairs(Workspace:GetDescendants()) do
 
-        if obj:IsA("Model") then
-            process(obj)
-        end
+		if obj:IsA("Model") then
+			processModel(obj)
+		end
 
-        if obj:IsA("BasePart") then
-            applyWall(obj)
-        end
+		if obj:IsA("BasePart") then
+			applyWall(obj)
+		end
 
-    end
+	end
 
 end
 
 --------------------------------------------------
--- SPAWN DETECTION
+-- DISABLE SYSTEM
 --------------------------------------------------
 
-Workspace.DescendantAdded:Connect(function(obj)
+local function disableXray()
 
-    if not enabled then return end
+	for _,p in ipairs(wallParts) do
+		if p then
+			p.LocalTransparencyModifier = 0
+		end
+	end
 
-    if obj:IsA("Model") then
-        process(obj)
-    end
+	for _,h in ipairs(highlights) do
+		if h then
+			h:Destroy()
+		end
+	end
 
-    if obj:IsA("BasePart") then
-        applyWall(obj)
-    end
-
-end)
-
---------------------------------------------------
--- DISABLE
---------------------------------------------------
-
-local function disable()
-
-    for part in pairs(walls) do
-        if part then
-            part.LocalTransparencyModifier = 0
-        end
-    end
-
-    for _,hl in pairs(highlights) do
-        if hl then
-            hl:Destroy()
-        end
-    end
-
-    table.clear(highlights)
-    table.clear(walls)
-    table.clear(processed)
+	table.clear(wallParts)
+	table.clear(highlights)
 
 end
 
@@ -188,25 +170,24 @@ end
 -- BUTTON
 --------------------------------------------------
 
-btn.MouseButton1Click:Connect(function()
+ToggleBtn.MouseButton1Click:Connect(function()
 
-    enabled = not enabled
+	enabled = not enabled
 
-    if enabled then
+	if enabled then
 
-        btn.Text = "XRAY : ON"
-        btn.BackgroundColor3 = Color3.fromRGB(0,180,0)
+		ToggleBtn.Text = "XRAY : ON"
+		ToggleBtn.BackgroundColor3 = Color3.fromRGB(0,180,0)
 
-        task.wait(1)
-        scanWorld()
+		scanWorld()
 
-    else
+	else
 
-        btn.Text = "XRAY : OFF"
-        btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
+		ToggleBtn.Text = "XRAY : OFF"
+		ToggleBtn.BackgroundColor3 = Color3.fromRGB(170,0,0)
 
-        disable()
+		disableXray()
 
-    end
+	end
 
 end)
