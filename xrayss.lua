@@ -2,13 +2,20 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 
--- prevent duplicate
-if CoreGui:FindFirstChild("XRAY_UNIVERSAL") then
-	CoreGui.XRAY_UNIVERSAL:Destroy()
+--------------------------------------------------
+-- PREVENT DUPLICATE
+--------------------------------------------------
+
+if CoreGui:FindFirstChild("UNIVERSAL_XRAY") then
+    CoreGui.UNIVERSAL_XRAY:Destroy()
 end
 
+--------------------------------------------------
+-- GUI
+--------------------------------------------------
+
 local gui = Instance.new("ScreenGui")
-gui.Name = "XRAY_UNIVERSAL"
+gui.Name = "UNIVERSAL_XRAY"
 gui.ResetOnSpawn = false
 gui.Parent = CoreGui
 
@@ -23,172 +30,217 @@ btn.Parent = gui
 
 Instance.new("UICorner",btn)
 
+--------------------------------------------------
+-- STATE
+--------------------------------------------------
+
 local enabled = false
 local highlights = {}
 local processed = {}
 local walls = {}
 
-local function isPlayer(model)
-	return Players:GetPlayerFromCharacter(model) ~= nil
+--------------------------------------------------
+-- PLAYER CHARACTER TABLE
+--------------------------------------------------
+
+local playerCharacters = {}
+
+local function updatePlayers()
+
+    table.clear(playerCharacters)
+
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p.Character then
+            playerCharacters[p.Character] = true
+        end
+    end
+
 end
 
-local function getCharacterModel(obj)
-	local m = obj
-	while m and not m:IsA("Model") do
-		m = m.Parent
-	end
-	return m
+Players.PlayerAdded:Connect(updatePlayers)
+Players.PlayerRemoving:Connect(updatePlayers)
+
+task.spawn(function()
+    while true do
+        updatePlayers()
+        task.wait(2)
+    end
+end)
+
+--------------------------------------------------
+-- RIG DETECTION
+--------------------------------------------------
+
+local function isRig(model)
+
+    if not model:IsA("Model") then
+        return false
+    end
+
+    local partCount = 0
+    local jointFound = false
+
+    for _,obj in ipairs(model:GetDescendants()) do
+
+        if obj:IsA("BasePart") then
+            partCount += 1
+        end
+
+        if obj:IsA("Motor6D") or obj:IsA("Weld") then
+            jointFound = true
+        end
+
+        if partCount >= 2 and jointFound then
+            return true
+        end
+
+    end
+
+    return false
 end
 
-local function createHighlight(model,color)
+--------------------------------------------------
+-- HIGHLIGHT
+--------------------------------------------------
 
-	if highlights[model] then return end
+local function addHighlight(model,color)
 
-	local hl = Instance.new("Highlight")
-	hl.FillTransparency = 1
-	hl.OutlineTransparency = 0
-	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	hl.OutlineColor = color
-	hl.Adornee = model
-	hl.Parent = model
+    if highlights[model] then return end
 
-	highlights[model] = hl
+    local hl = Instance.new("Highlight")
+    hl.FillTransparency = 1
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.OutlineColor = color
+    hl.Adornee = model
+    hl.Parent = model
+
+    highlights[model] = hl
+
 end
 
-local function classify(model)
+--------------------------------------------------
+-- PROCESS MODEL
+--------------------------------------------------
 
-	if isPlayer(model) then
-		return "player"
-	end
+local function process(model)
 
-	if model:FindFirstChildWhichIsA("Humanoid") then
-		return "npc"
-	end
+    if processed[model] then return end
+    if not model:IsA("Model") then return end
 
-	if model:FindFirstChildWhichIsA("AnimationController") then
-		return "npc"
-	end
+    processed[model] = true
 
-	if model:FindFirstChild("HumanoidRootPart") then
-		return "npc"
-	end
+    if playerCharacters[model] then
+        addHighlight(model,Color3.fromRGB(0,255,0))
+        return
+    end
 
-	return nil
+    if isRig(model) then
+        addHighlight(model,Color3.fromRGB(255,0,0))
+    end
+
 end
 
-local function process(obj)
-
-	local model = getCharacterModel(obj)
-	if not model or processed[model] then return end
-
-	local class = classify(model)
-	if not class then return end
-
-	processed[model] = true
-
-	if class == "player" then
-		createHighlight(model,Color3.fromRGB(0,255,0))
-	else
-		createHighlight(model,Color3.fromRGB(255,0,0))
-	end
-end
+--------------------------------------------------
+-- XRAY WALL
+--------------------------------------------------
 
 local function applyWall(part)
-	if walls[part] then return end
-	part.LocalTransparencyModifier = 0.5
-	walls[part] = true
-end
 
-local function rescanLoop()
+    if walls[part] then return end
 
-	task.spawn(function()
-
-		for i=1,5 do
-
-			if not enabled then return end
-
-			for _,obj in ipairs(Workspace:GetDescendants()) do
-
-				if obj:IsA("Humanoid")
-				or obj:IsA("AnimationController")
-				or obj.Name == "HumanoidRootPart" then
-					process(obj)
-				end
-
-				if obj:IsA("BasePart") then
-					applyWall(obj)
-				end
-
-			end
-
-			task.wait(0.5)
-
-		end
-
-	end)
+    part.LocalTransparencyModifier = 0.5
+    walls[part] = true
 
 end
+
+--------------------------------------------------
+-- INITIAL SCAN
+--------------------------------------------------
+
+local function scanWorld()
+
+    for _,obj in ipairs(Workspace:GetDescendants()) do
+
+        if obj:IsA("Model") then
+            process(obj)
+        end
+
+        if obj:IsA("BasePart") then
+            applyWall(obj)
+        end
+
+    end
+
+end
+
+--------------------------------------------------
+-- SPAWN DETECTION
+--------------------------------------------------
 
 Workspace.DescendantAdded:Connect(function(obj)
 
-	if not enabled then return end
+    if not enabled then return end
 
-	if obj:IsA("Humanoid")
-	or obj:IsA("AnimationController")
-	or obj.Name == "HumanoidRootPart" then
+    if obj:IsA("Model") then
+        task.delay(0.2,function()
+            process(obj)
+        end)
+    end
 
-		task.delay(0.2,function()
-			process(obj)
-		end)
-
-	end
-
-	if obj:IsA("BasePart") then
-		applyWall(obj)
-	end
+    if obj:IsA("BasePart") then
+        applyWall(obj)
+    end
 
 end)
 
+--------------------------------------------------
+-- DISABLE
+--------------------------------------------------
+
 local function disable()
 
-	for part in pairs(walls) do
-		if part then
-			part.LocalTransparencyModifier = 0
-		end
-	end
+    for part in pairs(walls) do
+        if part then
+            part.LocalTransparencyModifier = 0
+        end
+    end
 
-	for _,hl in pairs(highlights) do
-		if hl then
-			hl:Destroy()
-		end
-	end
+    for _,hl in pairs(highlights) do
+        if hl then
+            hl:Destroy()
+        end
+    end
 
-	table.clear(highlights)
-	table.clear(walls)
-	table.clear(processed)
+    table.clear(highlights)
+    table.clear(processed)
+    table.clear(walls)
 
 end
 
+--------------------------------------------------
+-- BUTTON
+--------------------------------------------------
+
 btn.MouseButton1Click:Connect(function()
 
-	enabled = not enabled
+    enabled = not enabled
 
-	if enabled then
+    if enabled then
 
-		btn.Text = "XRAY : ON"
-		btn.BackgroundColor3 = Color3.fromRGB(0,180,0)
+        btn.Text = "XRAY : ON"
+        btn.BackgroundColor3 = Color3.fromRGB(0,180,0)
 
-		task.wait(1)
+        task.wait(1)
+        scanWorld()
 
-		rescanLoop()
+    else
 
-	else
+        btn.Text = "XRAY : OFF"
+        btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
 
-		btn.Text = "XRAY : OFF"
-		btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
+        disable()
 
-		disable()
-
-	end
+    end
 
 end)
