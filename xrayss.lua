@@ -22,7 +22,7 @@ gui.Parent = CoreGui
 local btn = Instance.new("TextButton")
 btn.Size = UDim2.new(0,130,0,40)
 btn.Position = UDim2.new(0.1,0,0.5,0)
-btn.Text = "XRAY1 : OFF"
+btn.Text = "XRAY : OFF"
 btn.BackgroundColor3 = Color3.fromRGB(170,0,0)
 btn.TextColor3 = Color3.new(1,1,1)
 btn.Draggable = true
@@ -60,15 +60,25 @@ end
 Players.PlayerAdded:Connect(updatePlayers)
 Players.PlayerRemoving:Connect(updatePlayers)
 
-task.spawn(function()
-    while true do
-        updatePlayers()
-        task.wait(2)
-    end
-end)
+updatePlayers()
 
 --------------------------------------------------
--- RIG DETECTION
+-- GET TOP MODEL (FIX BUG)
+--------------------------------------------------
+
+local function getTopModel(model)
+
+    local top = model
+
+    while top.Parent and top.Parent:IsA("Model") do
+        top = top.Parent
+    end
+
+    return top
+end
+
+--------------------------------------------------
+-- DETECT RIG
 --------------------------------------------------
 
 local function isRig(model)
@@ -125,18 +135,20 @@ end
 
 local function process(model)
 
-    if processed[model] then return end
     if not model:IsA("Model") then return end
 
-    processed[model] = true
+    local topModel = getTopModel(model)
 
-    if playerCharacters[model] then
-        addHighlight(model,Color3.fromRGB(0,255,0))
+    if processed[topModel] then return end
+    processed[topModel] = true
+
+    if playerCharacters[topModel] then
+        addHighlight(topModel,Color3.fromRGB(0,255,0))
         return
     end
 
-    if isRig(model) then
-        addHighlight(model,Color3.fromRGB(255,0,0))
+    if isRig(topModel) then
+        addHighlight(topModel,Color3.fromRGB(255,0,0))
     end
 
 end
@@ -175,7 +187,7 @@ local function scanWorld()
 end
 
 --------------------------------------------------
--- SPAWN DETECTION
+-- SPAWN LISTENER
 --------------------------------------------------
 
 Workspace.DescendantAdded:Connect(function(obj)
